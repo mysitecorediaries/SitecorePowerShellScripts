@@ -1,4 +1,7 @@
-$items = Get-ChildItem -Path "master:/sitecore/content/Home" -Recurse
+# Path to your parent item 
+$parentItemPath = "master:/sitecore/content/Home/Articles"
+
+$items = Get-ChildItem -Path $parentItemPath -Recurse
 
 $results = foreach ($item in $items) {
     # Get the thumbnail image field
