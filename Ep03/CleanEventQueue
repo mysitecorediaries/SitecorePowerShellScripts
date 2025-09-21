@@ -1,0 +1,64 @@
+# 1. Prompting the User for Input
+$props = @{
+    Parameters  = @(
+        @{
+            Name  = "inputValue"
+            Title = "Enter number of days to keep in Event Queue (0 = delete all)"
+        }
+    )
+    Title       = "Days to Keep"
+    Description = "Enter number of days to keep in Event Queue (0 = delete all)"
+    Width       = 500
+    Height      = 400
+}
+
+$result = Read-Variable @props
+
+# 2. Validating the User Input
+
+try {
+    $daysToKeep = [int]$inputValue
+    Write-Host "You entered: $daysToKeep"
+}
+catch {
+    Write-Host "Invalid input, please enter a number."
+}
+
+#3. Determining the Cutoff Date (Always in UTC)
+if ($daysToKeep -eq 0) {
+    $cutoffDate = [DateTime]::UtcNow   # delete all older than now
+    Write-Host "Deleting ALL items from EventQueue in all Sitecore databases..." -ForegroundColor Yellow
+}
+else {
+    $cutoffDate = (Get-Date).AddDays(-$daysToKeep).ToUniversalTime()
+    Write-Host "Cleaning EventQueue... Keeping only last $daysToKeep days (Cutoff UTC: $cutoffDate)" -ForegroundColor Cyan
+}
+
+#4. Connecting to the Database
+
+$databases = @("core", "master", "webpreview", "web")
+
+foreach ($dbName in $databases) {
+    try {
+        $connectionString = [Sitecore.Configuration.Settings]::GetConnectionString($dbName)
+        $sqlConnection = New-Object System.Data.SqlClient.SqlConnection $connectionString
+        $sqlConnection.Open()
+
+        # 5. Building and Running the SQL Delete Command
+
+        $sqlCmd = $sqlConnection.CreateCommand()
+        $sqlCmd.CommandText = "DELETE FROM EventQueue WHERE Created < @Cutoff"
+        $sqlCmd.Parameters.Add("@Cutoff", [System.Data.SqlDbType]::DateTime).Value = $cutoffDate
+
+        $rowsDeleted = $sqlCmd.ExecuteNonQuery()
+        Write-Host "$rowsDeleted rows deleted from EventQueue ($dbName)." -ForegroundColor Green
+        
+        # 6. Closing the Database Connection
+        $sqlConnection.Close()
+    }
+    catch {
+        Write-Host "⚠️ Could not clean EventQueue for database '$dbName'. Error: $_" -ForegroundColor Red
+    }
+}
+
+Write-Host "✅ EventQueue cleanup completed."
